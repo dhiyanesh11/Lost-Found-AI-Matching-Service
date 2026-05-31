@@ -1,5 +1,10 @@
 fastapi
 uvicorn
-scikit-learn
+sentence-transformers
+torch
+torchvision
+pillow
 numpy
+requests
+scikit-learn
 pydantic
