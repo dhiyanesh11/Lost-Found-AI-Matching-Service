@@ -19,8 +19,29 @@ app = FastAPI(title="Lost & Found - Unified AI Matching Service")
 # Text model: all-MiniLM-L6-v2 → 384-dim semantic embeddings
 text_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-# Image model: CLIP ViT-B/32 → 512-dim semantic embeddings
-image_model = SentenceTransformer("clip-ViT-B-32")
+# Image model: MobileNetV2 → 1280-dim feature embeddings (14MB weights, low memory)
+import torch
+import torchvision.models as models
+import torchvision.transforms as transforms
+
+try:
+    from torchvision.models import mobilenet_v2, MobileNet_V2_Weights
+    weights = MobileNet_V2_Weights.DEFAULT
+    image_model = models.mobilenet_v2(weights=weights)
+except ImportError:
+    from torchvision.models import mobilenet_v2
+    image_model = models.mobilenet_v2(pretrained=True)
+
+image_model.classifier = torch.nn.Identity()
+image_model.eval()
+
+# Preprocessing transforms for MobileNetV2
+preprocess = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
 
 # Thread pool for parallel encoding
 executor = ThreadPoolExecutor(max_workers=2)
@@ -96,8 +117,11 @@ def _encode_text(title: str, description: str, location: str) -> list:
 
 
 def _encode_image(image: Image.Image) -> list:
-    """Generate image embedding."""
-    return image_model.encode(image).tolist()
+    """Generate image embedding using MobileNetV2."""
+    tensor = preprocess(image).unsqueeze(0)
+    with torch.no_grad():
+        features = image_model(tensor)
+    return features.squeeze(0).tolist()
 
 
 @app.post("/embed/text", response_model=EmbeddingResponse)
@@ -203,6 +227,6 @@ def health_check():
         "status": "ok",
         "text_model": "all-MiniLM-L6-v2",
         "text_dimensions": 384,
-        "image_model": "clip-ViT-B-32",
-        "image_dimensions": 512,
+        "image_model": "mobilenet_v2",
+        "image_dimensions": 1280,
     }
